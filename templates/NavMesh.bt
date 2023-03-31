@@ -1,0 +1,41 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Binary Template
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+#include "NavMeshStructs.bt"
+
+SetBackColor(0x603060);
+NavMeshSetHeader hdr;
+
+struct {
+    struct {
+        SetBackColor(0x603030);
+        NavMeshTileHeader tileHeader;
+    
+        SetBackColor(0x606030);
+        dtMeshHeader meshHeader;
+    
+        SetBackColor(0x306030);
+        dtMeshTile tile(meshHeader);
+    
+        Assert(tileHeader.dataSize == sizeof(meshHeader) + sizeof(tile), "dataSize does not match the actual size");
+    
+    } tiles[hdr.numTiles]<optimize=false>;
+} meshTiles;
+
+SetBackColor(0xA050A0);
+int unkThing[hdr.params.disjoint_poly_group_count];
+
+SetBackColor(0x50A0A0);
+struct{
+    int table[hdr.params.reachability_table_size / 4];
+} reachabilityTable[hdr.params.reachability_table_count]<optimize=false>;
