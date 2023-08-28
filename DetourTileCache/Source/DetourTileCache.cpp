@@ -765,7 +765,7 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	if (navData)
 	{
 		// Let the navmesh own the data.
-		status = navmesh->addTile(navData,navDataSize,DT_TILE_FREE_DATA,0,0);
+		status = navmesh->addTile(navData,navDataSize,DT_TILE_FREE_DATA,0,0, true);
 		if (dtStatusFailed(status))
 		{
 			dtFree(navData);

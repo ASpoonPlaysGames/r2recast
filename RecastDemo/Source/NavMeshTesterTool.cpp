@@ -43,7 +43,7 @@
 #endif
 
 // Uncomment this to dump all the requests in stdout.
-#define DUMP_REQS
+//#define DUMP_REQS
 
 // Returns a random number [0..1]
 static float frand()
@@ -676,6 +676,31 @@ void NavMeshTesterTool::reset()
 	m_distanceToWall = 0;
 }
 
+static void getPolyCenter(dtNavMesh* navMesh, dtPolyRef ref, float* center)
+{
+	center[0] = 0;
+	center[1] = 0;
+	center[2] = 0;
+
+	const dtMeshTile* tile = 0;
+	const dtPoly* poly = 0;
+	dtStatus status = navMesh->getTileAndPolyByRef(ref, &tile, &poly);
+	if (dtStatusFailed(status))
+		return;
+
+	for (int i = 0; i < (int)poly->vertCount; ++i)
+	{
+		const float* v = &tile->verts[poly->verts[i] * 3];
+		center[0] += v[0];
+		center[1] += v[1];
+		center[2] += v[2];
+	}
+	const float s = 1.0f / poly->vertCount;
+	center[0] *= s;
+	center[1] *= s;
+	center[2] *= s;
+}
+
 
 void NavMeshTesterTool::recalc()
 {
@@ -1005,35 +1030,38 @@ void NavMeshTesterTool::recalc()
 				   m_filter.getIncludeFlags(), m_filter.getExcludeFlags());
 #endif
 			m_navQuery->findLocalNeighbourhood(m_startRef, m_spos, m_neighbourhoodRadius, &m_filter,
-											   m_polys, m_parent, &m_npolys, MAX_POLYS);
+											   m_polys, m_parent, &m_npolys, MAX_POLYS, m_dist);
+
+			m_sample->m_ctx->enableLog(true);
+			m_sample->m_ctx->resetLog();
+			for (int i = 0; i < m_npolys; ++i)
+			{
+				const dtMeshTile* parentTile;
+				const dtPoly* parentPoly;
+				m_navMesh->getTileAndPolyByRef(m_parent[i], &parentTile, &parentPoly);
+
+				m_sample->m_ctx->log(RC_LOG_PROGRESS, "Value: %hu", (unsigned short)m_dist[i]);
+
+
+				float startOrig[3];
+				float endOrig[3];
+
+				getPolyCenter(m_navMesh, m_parent[i], startOrig);
+				getPolyCenter(m_navMesh, m_polys[i], endOrig);
+
+				float dist = dtVdist(startOrig, endOrig);
+				float dist2D = dtVdist2D(startOrig, endOrig);
+				float distSqr = dtVdistSqr(startOrig, endOrig);
+				float dist2DSqr = dtVdist2DSqr(startOrig, endOrig);
+				
+				m_sample->m_ctx->log(RC_LOG_PROGRESS, "Distances: %f %f %f %f", dist, dist2D, distSqr, dist2DSqr);
+
+			}
 		}
 	}
 }
 
-static void getPolyCenter(dtNavMesh* navMesh, dtPolyRef ref, float* center)
-{
-	center[0] = 0;
-	center[1] = 0;
-	center[2] = 0;
-	
-	const dtMeshTile* tile = 0;
-	const dtPoly* poly = 0;
-	dtStatus status = navMesh->getTileAndPolyByRef(ref, &tile, &poly);
-	if (dtStatusFailed(status))
-		return;
-		
-	for (int i = 0; i < (int)poly->vertCount; ++i)
-	{
-		const float* v = &tile->verts[poly->verts[i]*3];
-		center[0] += v[0];
-		center[1] += v[1];
-		center[2] += v[2];
-	}
-	const float s = 1.0f / poly->vertCount;
-	center[0] *= s;
-	center[1] *= s;
-	center[2] *= s;
-}
+
 
 
 
@@ -1293,7 +1321,7 @@ void NavMeshTesterTool::handleRender()
 				dd.depthMask(false);
 				getPolyCenter(m_navMesh, m_parent[i], p0);
 				getPolyCenter(m_navMesh, m_polys[i], p1);
-				duDebugDrawArc(&dd, p0[0],p0[1],p0[2], p1[0],p1[1],p1[2], 0.25f, 0.0f, 30.0f, duRGBA(0,0,0,128), 2.0f);
+				duDebugDrawArc(&dd, p0[0],p0[1],p0[2], p1[0],p1[1],p1[2], 0.25f, 0.0f, 30.0f, m_dist[i] | 0xFF000000, 2.0f);
 				dd.depthMask(true);
 			}
 

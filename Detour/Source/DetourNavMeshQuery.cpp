@@ -3056,6 +3056,11 @@ dtStatus dtNavMeshQuery::getPathFromDijkstraSearch(dtPolyRef endRef, dtPolyRef* 
 	return getPathToNode(endNode, path, pathCount, maxPath);
 }
 
+inline unsigned int duRGBA(int r, int g, int b, int a)
+{
+	return ((unsigned int)r) | ((unsigned int)g << 8) | ((unsigned int)b << 16) | ((unsigned int)a << 24);
+}
+
 /// @par
 ///
 /// This method is optimized for a small search radius and small number of result 
@@ -3081,7 +3086,7 @@ dtStatus dtNavMeshQuery::getPathFromDijkstraSearch(dtPolyRef endRef, dtPolyRef* 
 dtStatus dtNavMeshQuery::findLocalNeighbourhood(dtPolyRef startRef, const float* centerPos, const float radius,
 												const dtQueryFilter* filter,
 												dtPolyRef* resultRef, dtPolyRef* resultParent,
-												int* resultCount, const int maxResult) const
+												int* resultCount, const int maxResult, short* jumpVals) const
 {
 	dtAssert(m_nav);
 	dtAssert(m_tinyNodePool);
@@ -3241,6 +3246,9 @@ dtStatus dtNavMeshQuery::findLocalNeighbourhood(dtPolyRef startRef, const float*
 				resultRef[n] = neighbourRef;
 				if (resultParent)
 					resultParent[n] = curRef;
+
+				jumpVals[n] = link->jumpType;
+
 				++n;
 			}
 			else

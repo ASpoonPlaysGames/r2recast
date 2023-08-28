@@ -371,9 +371,9 @@ public:
 	///  @param[in]		maxResult		The maximum number of polygons the result arrays can hold.
 	/// @returns The status flags for the query.
 	dtStatus findLocalNeighbourhood(dtPolyRef startRef, const float* centerPos, const float radius,
-									const dtQueryFilter* filter,
-									dtPolyRef* resultRef, dtPolyRef* resultParent,
-									int* resultCount, const int maxResult) const;
+		const dtQueryFilter* filter,
+		dtPolyRef* resultRef, dtPolyRef* resultParent,
+		int* resultCount, const int maxResult, short* distances) const;
 
 	/// Moves from the start to the end position constrained to the navigation mesh.
 	///  @param[in]		startRef		The reference id of the start polygon.
@@ -520,6 +520,12 @@ public:
 	const dtNavMesh* getAttachedNavMesh() const { return m_nav; }
 
 	/// @}
+
+	/// Returns edge mid point between two polygons.
+	dtStatus getEdgeMidPoint(dtPolyRef from, dtPolyRef to, float* mid) const;
+	dtStatus getEdgeMidPoint(dtPolyRef from, const dtPoly* fromPoly, const dtMeshTile* fromTile,
+		dtPolyRef to, const dtPoly* toPoly, const dtMeshTile* toTile,
+		float* mid) const;
 	
 private:
 	// Explicitly disabled copy constructor and copy assignment operator
@@ -536,12 +542,6 @@ private:
 	dtStatus getPortalPoints(dtPolyRef from, const dtPoly* fromPoly, const dtMeshTile* fromTile,
 							 dtPolyRef to, const dtPoly* toPoly, const dtMeshTile* toTile,
 							 float* left, float* right) const;
-	
-	/// Returns edge mid point between two polygons.
-	dtStatus getEdgeMidPoint(dtPolyRef from, dtPolyRef to, float* mid) const;
-	dtStatus getEdgeMidPoint(dtPolyRef from, const dtPoly* fromPoly, const dtMeshTile* fromTile,
-							 dtPolyRef to, const dtPoly* toPoly, const dtMeshTile* toTile,
-							 float* mid) const;
 	
 	// Appends vertex to a straight path
 	dtStatus appendVertex(const float* pos, const unsigned char flags, const dtPolyRef ref,

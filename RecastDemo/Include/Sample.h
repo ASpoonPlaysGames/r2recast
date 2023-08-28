@@ -116,6 +116,8 @@ protected:
 
 	unsigned char m_navMeshDrawFlags;
 
+	float m_drawLinkType = -1;
+
 	float m_cellSize;
 	float m_cellHeight;
 	float m_agentHeight;
@@ -140,7 +142,7 @@ protected:
 	SampleTool* m_tool;
 	SampleToolState* m_toolStates[MAX_TOOLS];
 	
-	BuildContext* m_ctx;
+	
 
 	SampleDebugDraw m_dd;
 	
@@ -148,6 +150,9 @@ protected:
 	void saveAll(const char* path,dtNavMesh* mesh);
 
 public:
+	// fuck this logging system
+	BuildContext* m_ctx;
+
 	std::string m_model_name;
 
 	Sample();

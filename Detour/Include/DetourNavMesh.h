@@ -211,7 +211,9 @@ struct dtLink
 	unsigned char side;				///< If a boundary link, defines on which side the link is.
 	unsigned char bmin;				///< If a boundary link, defines the minimum sub-edge area.
 	unsigned char bmax;				///< If a boundary link, defines the maximum sub-edge area.
-	unsigned int flags;
+	unsigned char jumpType;
+	unsigned char otherUnk;
+	unsigned short reverseLinkIndex;
 };
 
 /// Bounding volume node.
@@ -297,6 +299,7 @@ struct dtMeshTile
 	unsigned int linksFreeList;			///< Index to the next free link.
 	dtMeshHeader* header;				///< The tile header.
 	dtPoly* polys;						///< The tile polygons. [Size: dtMeshHeader::polyCount]
+	int* unkPolyThing;
 	float* verts;						///< The tile vertices. [Size: dtMeshHeader::vertCount]
 	dtLink* links;						///< The tile links. [Size: dtMeshHeader::maxLinkCount]
 	dtPolyDetail* detailMeshes;			///< The tile's detail sub-meshes. [Size: dtMeshHeader::detailMeshCount]
@@ -385,7 +388,7 @@ public:
 	///  @param[in]		lastRef		The desired reference for the tile. (When reloading a tile.) [opt] [Default: 0]
 	///  @param[out]	result		The tile reference. (If the tile was succesfully added.) [opt]
 	/// @return The status flags for the operation.
-	dtStatus addTile(unsigned char* data, int dataSize, int flags, dtTileRef lastRef, dtTileRef* result);
+	dtStatus addTile(unsigned char* data, int dataSize, int flags, dtTileRef lastRef, dtTileRef* result, bool createLinks);
 	
 	/// Removes the specified tile from the navigation mesh.
 	///  @param[in]		ref			The reference of the tile to remove.
@@ -644,8 +647,13 @@ private:
 	
 	/// Returns all polygons in neighbour tile based on portal defined by the segment.
 	int findConnectingPolys(const float* va, const float* vb,
-							const dtMeshTile* tile, int side,
-							dtPolyRef* con, float* conarea, int maxcon) const;
+		const dtMeshTile* tile, int side,
+		dtPolyRef* con, float* conarea, int maxcon) const;
+
+	/// y
+	int findJumpTargets(const dtMeshTile* fromTile, const dtPoly* fromPoly, const int fromSide, dtMeshTile* toTile, dtPolyRef* foundRefs, int* foundSides, int maxResults) const;
+
+	char getJumpType(const dtMeshTile* fromTile, const dtPoly* fromPoly, const int fromEdge, const dtMeshTile* toTile, const dtPoly* toPoly, const int toEdge) const;
 	
 	/// Builds internal polygons links for a tile.
 	void connectIntLinks(dtMeshTile* tile);
@@ -656,10 +664,12 @@ private:
 	void connectExtLinks(dtMeshTile* tile, dtMeshTile* target, int side);
 	/// Builds external polygon links for a tile.
 	void connectExtOffMeshLinks(dtMeshTile* tile, dtMeshTile* target, int side);
-	
+
 	/// Removes external links at specified side.
 	void unconnectLinks(dtMeshTile* tile, dtMeshTile* target);
-	
+
+	// Builds jump links to other tiles from a tile.
+	void connectExtJumpLinks(dtMeshTile* fromTile);
 
 	// TODO: These methods are duplicates from dtNavMeshQuery, but are needed for off-mesh connection finding.
 	

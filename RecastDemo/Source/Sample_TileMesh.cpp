@@ -465,7 +465,7 @@ void Sample_TileMesh::handleRender()
 		 m_drawMode == DRAWMODE_NAVMESH_INVIS))
 	{
 		if (m_drawMode != DRAWMODE_NAVMESH_INVIS)
-			duDebugDrawNavMeshWithClosedList(&m_dd, *m_navMesh, *m_navQuery, m_navMeshDrawFlags);
+			duDebugDrawNavMeshWithClosedList(&m_dd, *m_navMesh, *m_navQuery, m_navMeshDrawFlags, m_drawLinkType);
 		if (m_drawMode == DRAWMODE_NAVMESH_BVTREE)
 			duDebugDrawNavMeshBVTree(&m_dd, *m_navMesh);
 		if (m_drawMode == DRAWMODE_NAVMESH_PORTALS)
@@ -671,7 +671,7 @@ void Sample_TileMesh::buildTile(const float* pos)
 	if (data)
 	{
 		// Let the navmesh own the data.
-		dtStatus status = m_navMesh->addTile(data,dataSize,DT_TILE_FREE_DATA,0,0);
+		dtStatus status = m_navMesh->addTile(data,dataSize,DT_TILE_FREE_DATA,0,0, true);
 		if (dtStatusFailed(status))
 			dtFree(data);
 	}
@@ -749,7 +749,7 @@ void Sample_TileMesh::buildAllTiles()
 				// Remove any previous data (navmesh owns and deletes the data).
 				m_navMesh->removeTile(m_navMesh->getTileRefAt(x,y,0),0,0);
 				// Let the navmesh own the data.
-				dtStatus status = m_navMesh->addTile(data,dataSize,DT_TILE_FREE_DATA,0,0);
+				dtStatus status = m_navMesh->addTile(data,dataSize,DT_TILE_FREE_DATA,0,0, true);
 				if (dtStatusFailed(status))
 					dtFree(data);
 			}
@@ -839,7 +839,7 @@ unsigned char* Sample_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	m_cfg.mergeRegionArea = (int)rcSqr(m_regionMergeSize);	// Note: area = size*size
 	m_cfg.maxVertsPerPoly = (int)m_vertsPerPoly;
 	m_cfg.tileSize = (int)m_tileSize;
-	m_cfg.borderSize = m_cfg.walkableRadius + 3; // Reserve enough padding.
+	m_cfg.borderSize = m_cfg.walkableRadius + 50; // Reserve enough padding.
 	m_cfg.width = m_cfg.tileSize + m_cfg.borderSize*2;
 	m_cfg.height = m_cfg.tileSize + m_cfg.borderSize*2;
 	m_cfg.detailSampleDist = m_detailSampleDist < 0.9f ? 0 : m_cellSize * m_detailSampleDist;

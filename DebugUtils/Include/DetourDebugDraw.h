@@ -30,8 +30,8 @@ enum DrawNavMeshFlags
 	DU_DRAWNAVMESH_COLOR_TILES = 0x04,
 };
 
-void duDebugDrawNavMesh(struct duDebugDraw* dd, const dtNavMesh& mesh, unsigned char flags);
-void duDebugDrawNavMeshWithClosedList(struct duDebugDraw* dd, const dtNavMesh& mesh, const dtNavMeshQuery& query, unsigned char flags);
+void duDebugDrawNavMesh(struct duDebugDraw* dd, const dtNavMesh& mesh, unsigned char flags, int drawLinkType);
+void duDebugDrawNavMeshWithClosedList(struct duDebugDraw* dd, const dtNavMesh& mesh, const dtNavMeshQuery& query, unsigned char flags, int drawLinkType);
 void duDebugDrawNavMeshNodes(struct duDebugDraw* dd, const dtNavMeshQuery& query);
 void duDebugDrawNavMeshBVTree(struct duDebugDraw* dd, const dtNavMesh& mesh);
 void duDebugDrawNavMeshPortals(struct duDebugDraw* dd, const dtNavMesh& mesh);

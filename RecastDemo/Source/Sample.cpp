@@ -36,6 +36,8 @@
 #ifdef WIN32
 #	define snprintf _snprintf
 #endif
+#include <fstream>
+#include <format>
 
 unsigned int SampleDebugDraw::areaToCol(unsigned int area)
 {
@@ -188,7 +190,7 @@ void Sample::resetCommonSettings()
 	m_reachabilityTableCount = 1;
 }
 hulldef hulls[4] = {
-	{"small",8,72*0.5,18,512.0f},
+	{"small",16,72,12,512.0f},
 	{"med_short",20,72*0.5,18,512.0f},
 	{"medium",48,150*0.5,32,512.0f},
 	{"large",60,235*0.5,80,960.0f},
@@ -209,6 +211,8 @@ void Sample::handleCommonSettings()
 		}
 		is_human = false;
 	}
+	imguiLabel("Links");
+	imguiSlider("Filter", &m_drawLinkType, -1, 32, 1);
 	imguiLabel("Rasterization");
 	imguiSlider("Cell Size", &m_cellSize, 0.1f, 100.0f, 0.01f);
 	imguiSlider("Cell Height", &m_cellHeight, 0.1f, 100.0f, 0.01f);
@@ -505,7 +509,7 @@ dtNavMesh* Sample::loadAll(const char* path)
 			return 0;
 		}
 		dtTileRef result;
-		mesh->addTile(data, tileHeader.dataSize, DT_TILE_FREE_DATA, tileHeader.tileRef, &result);
+		mesh->addTile(data, tileHeader.dataSize, DT_TILE_FREE_DATA, tileHeader.tileRef, &result, false);
 		auto tile = const_cast<dtMeshTile*>(mesh->getTileByRef(result));
 		if (*is_tf2) patch_tiletf2(tile);
 	}
@@ -666,11 +670,67 @@ void Sample::saveAll(const char* path,dtNavMesh* mesh)
 	if (*is_tf2)unpatch_headertf2(header);
 	fwrite(&header, sizeof(NavMeshSetHeader), 1, fp);
 
+	std::ofstream stream = std::ofstream("C:\\Users\\Jack\\Desktop\\Northstar Things\\Raw map exports\\dump.csv", std::ios::out);
+
+	stream << "tileNum, polyNum, Type, ref, 2d distance, 3d distance, height diff, unk1, unk2, x diff, y diff, side" << "\n";
+
 	// Store tiles.
-	for (int i = 0; i < mesh->getMaxTiles(); ++i)
+	for (int k = 0; k < mesh->getMaxTiles(); ++k)
 	{
-		dtMeshTile* tile = mesh->getTile(i);
+		dtMeshTile* tile = mesh->getTile(k);
 		if (!tile || !tile->header || !tile->dataSize) continue;
+
+		// dump link data from polys
+		for (int i = 0; i < tile->header->polyCount; ++i)
+		{
+			const dtPoly* poly = &tile->polys[i];
+
+			if (poly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION)
+				continue;
+
+			// loop through all links for the poly
+			for (unsigned int j = poly->firstLink; j != DT_NULL_LINK; j = tile->links[j].next)
+			{
+				dtLink* link = &tile->links[j];
+
+				if (link->jumpType == 0xFF)
+					continue;
+
+				int type = link->jumpType;
+				float dist2d;
+				float dist3d;
+				float heightDiff;
+
+				const float* startPos;
+				const float* endPos;
+
+				const dtMeshTile* toTile;
+				const dtPoly* toPoly;
+
+				if (dtStatusFailed(mesh->getTileAndPolyByRef(link->ref, &toTile, &toPoly)))
+					continue;
+
+				if (toPoly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION)
+					continue;
+
+				startPos = poly->org;
+				endPos = toPoly->org;
+
+				heightDiff = startPos[2] - endPos[2];
+				float xDiff = startPos[0] - endPos[0];
+				float zDiff = startPos[1] - endPos[1];
+				dist2d = sqrtf(xDiff * xDiff + zDiff * zDiff);
+				dist3d = sqrtf(xDiff * xDiff + zDiff * zDiff + heightDiff * heightDiff);
+
+				char buf[100];
+
+				//"Type, 2d distance, 3d distance, height diff"
+				snprintf(buf, 100, "%i, %i, %i, %i, %f, %f, %f, %i, %i, %f, %f, %i", k, i, type, j, dist2d, dist3d, heightDiff, link->otherUnk, link->reverseLinkIndex, xDiff, zDiff, link->side);
+
+				stream << buf << "\n";
+
+			}
+		}
 
 		NavMeshTileHeader tileHeader;
 		tileHeader.tileRef = mesh->getTileRef(tile);
@@ -678,18 +738,41 @@ void Sample::saveAll(const char* path,dtNavMesh* mesh)
 		fwrite(&tileHeader, sizeof(tileHeader), 1, fp);
 
 		if (*is_tf2)unpatch_tiletf2(const_cast<dtMeshTile*>(tile));
+		for (int i = 0; i < tile->header->sth_per_poly * tile->header->polyCount; ++i)
+		{
+			tile->unkPolyThing[i] = 0;
+		}
+
+		for (int i = 0; i < tile->header->polyCount; ++i)
+		{
+			dtPoly* poly = &tile->polys[i];
+			poly->disjointSetId = 0;
+			poly->unk = 0;
+			for (int j = poly->firstLink; j != -1; j = tile->links[j].next)
+			{
+				dtLink* link = &tile->links[j];
+				if (link->jumpType == 0xFF || tile->links[i].ref == 0)
+					continue;
+
+				link->side = 0;
+				link->otherUnk = 0;
+			}
+		}
+
 		fwrite(tile->data, tile->dataSize, 1, fp);
 		if (*is_tf2)patch_tiletf2(const_cast<dtMeshTile*>(tile));
 	}
+
+	stream.close();
 	
 	//still dont know what this thing is...
 	int header_unk=0;
 	for(int i=0;i<linkData.setCount;i++)
 		fwrite(&header_unk, sizeof(int), 1, fp);
 
-	std::vector<int> reachability(tableSize,0);
-	for (int i = 0; i < linkData.setCount; i++)
-		setReachable(reachability, linkData.setCount, i, i, true);
+	std::vector<int> reachability(tableSize, 0);
+	//for (int i = 0; i < linkData.setCount; i++)
+	//	setReachable(reachability, linkData.setCount, i, i, true);
 	for(int i=0;i< header.params.reachabilityTableCount;i++)
 		fwrite(reachability.data(), sizeof(int), (tableSize /4), fp);
 	fclose(fp);

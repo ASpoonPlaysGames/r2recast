@@ -266,7 +266,7 @@ void Sample_SoloMesh::handleRender()
 		m_drawMode == DRAWMODE_NAVMESH_INVIS))
 	{
 		if (m_drawMode != DRAWMODE_NAVMESH_INVIS)
-			duDebugDrawNavMeshWithClosedList(&m_dd, *m_navMesh, *m_navQuery, m_navMeshDrawFlags);
+			duDebugDrawNavMeshWithClosedList(&m_dd, *m_navMesh, *m_navQuery, m_navMeshDrawFlags, m_drawLinkType);
 		if (m_drawMode == DRAWMODE_NAVMESH_BVTREE)
 			duDebugDrawNavMeshBVTree(&m_dd, *m_navMesh);
 		if (m_drawMode == DRAWMODE_NAVMESH_NODES)

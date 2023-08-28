@@ -26,6 +26,7 @@
 #include "DetourAlloc.h"
 #include "DetourAssert.h"
 #include <new>
+#include <set>
 
 
 inline bool overlapSlabs(const float* amin, const float* amax,
@@ -285,7 +286,7 @@ dtStatus dtNavMesh::init(unsigned char* data, const int dataSize, const int flag
 	if (dtStatusFailed(status))
 		return status;
 
-	return addTile(data, dataSize, flags, 0, 0);
+	return addTile(data, dataSize, flags, 0, 0, true);
 }
 
 /// @par
@@ -411,8 +412,8 @@ void dtNavMesh::connectExtLinks(dtMeshTile* tile, dtMeshTile* target, int side)
 				continue;
 			
 			// Create new links
-			const float* va = &tile->verts[poly->verts[j]*3];
-			const float* vb = &tile->verts[poly->verts[(j+1) % nv]*3];
+			const float* va = &tile->verts[poly->verts[j]*3]; // pos of first vert in the edge
+			const float* vb = &tile->verts[poly->verts[(j+1) % nv]*3]; // pos of second vert in the edge
 			dtPolyRef nei[4];
 			float neia[4*2];
 			int nnei = findConnectingPolys(va,vb, target, dtOppositeTile(dir), nei,neia,4);
@@ -428,8 +429,10 @@ void dtNavMesh::connectExtLinks(dtMeshTile* tile, dtMeshTile* target, int side)
 					
 					link->next = poly->firstLink;
 					poly->firstLink = idx;
-					link->flags = 0xffff00ff;
 
+					link->jumpType = 0xFF;
+					link->reverseLinkIndex = 0xFFFF;
+					
 					// Compress portal limits to a byte value.
 					if (dir == 0 || dir == 4)
 					{
@@ -501,7 +504,9 @@ void dtNavMesh::connectExtOffMeshLinks(dtMeshTile* tile, dtMeshTile* target, int
 			// Add to linked list.
 			link->next = targetPoly->firstLink;
 			targetPoly->firstLink = idx;
-			link->flags = 0xffff00ff;
+			
+			link->jumpType = 0xFF;
+			link->reverseLinkIndex = 0xFFFF;
 		}
 		
 		// Link target poly to off-mesh connection.
@@ -520,7 +525,8 @@ void dtNavMesh::connectExtOffMeshLinks(dtMeshTile* tile, dtMeshTile* target, int
 				// Add to linked list.
 				link->next = landPoly->firstLink;
 				landPoly->firstLink = tidx;
-				link->flags = 0xffff00ff;
+				link->jumpType = 0xFF;
+				link->reverseLinkIndex = 0xFFFF;
 			}
 		}
 	}
@@ -558,7 +564,8 @@ void dtNavMesh::connectIntLinks(dtMeshTile* tile)
 				// Add to linked list.
 				link->next = poly->firstLink;
 				poly->firstLink = idx;
-				link->flags = 0xffff00ff;
+				link->jumpType = 0xFF;
+				link->reverseLinkIndex = 0xFFFF;
 			}
 		}
 	}
@@ -602,7 +609,8 @@ void dtNavMesh::baseOffMeshLinks(dtMeshTile* tile)
 			// Add to linked list.
 			link->next = poly->firstLink;
 			poly->firstLink = idx;
-			link->flags = 0xffff00ff;
+			link->jumpType = 0xFF;
+			link->reverseLinkIndex = 0xFFFF;
 		}
 
 		// Start end-point is always connect back to off-mesh connection. 
@@ -619,7 +627,125 @@ void dtNavMesh::baseOffMeshLinks(dtMeshTile* tile)
 			// Add to linked list.
 			link->next = landPoly->firstLink;
 			landPoly->firstLink = tidx;
-			link->flags = 0xffff00ff;
+			link->jumpType = 0xFF;
+			link->reverseLinkIndex = 0xFFFF;
+		}
+	}
+}
+
+int dtNavMesh::findJumpTargets(const dtMeshTile* fromTile, const dtPoly* fromPoly, const int fromEdge, dtMeshTile* toTile, dtPolyRef* foundRefs, int* foundEdges, int maxResults) const
+{
+	return 0;
+}
+
+char dtNavMesh::getJumpType(const dtMeshTile* fromTile, const dtPoly* fromPoly, const int fromEdge, const dtMeshTile* toTile, const dtPoly* toPoly, const int toEdge) const
+{
+	float startPos[3];
+	float endPos[3];
+
+	// get mid point of edge
+	dtVcopy(startPos, &fromTile->verts[fromPoly->verts[fromEdge]]);
+	dtVadd(startPos, startPos, &fromTile->verts[fromPoly->verts[(fromEdge + 1) % fromPoly->vertCount]]);
+	dtVscale(startPos, startPos, 0.5f);
+
+	// get mid point of edge
+	dtVcopy(endPos, &toTile->verts[toPoly->verts[toEdge]]);
+	dtVadd(endPos, endPos, &toTile->verts[toPoly->verts[(toEdge + 1) % toPoly->vertCount]]);
+	dtVscale(endPos, endPos, 0.5f);
+
+	float dist2D = dtVdist2D(startPos, endPos);
+	float heightDiff = fabs(startPos[2] - endPos[2]);
+
+	if (dist2D < 28 && heightDiff > 28 && heightDiff < 256)
+		return (char)0x8;
+
+	// no valid jump type
+	return (char)0xFF;
+}
+
+void dtNavMesh::connectExtJumpLinks(dtMeshTile* fromTile)
+{
+	return;
+	// note: lmao O(n^5) at minimum. why can't i just iterate through all polys without going through all tiles to get there
+	// all polys in tile -> all sides in poly -> all other tiles -> all polys in those tiles -> all sides in those polys
+	// because i need to compare each side to determine if AI should jump between them
+
+	// iterate through polys in this tile
+	for (int i = 0; i < fromTile->header->polyCount; ++i)
+	{
+		dtPoly* fromPoly = &fromTile->polys[i];
+
+		// iterate through sides in this poly
+		for (int j = 0; j < fromPoly->vertCount; ++j)
+		{
+			// skip the side if not a "hard edge" (dark line in editor)
+			if (fromPoly->neis[j] != 0)
+				continue;
+
+			// iterate through all other tiles in the navmesh
+			for (int k = 0; k < m_maxTiles; ++k)
+			{
+				dtMeshTile* toTile = &m_tiles[k];
+				if (!toTile->header)
+					continue;
+				if (toTile == fromTile)
+					continue;
+			
+				// iterate through all polys in the target tile
+				for (int l = 0; l < toTile->header->polyCount; ++l)
+				{
+					dtPoly* toPoly = &toTile->polys[l];
+
+					// iterate through all sides in the target poly
+					for (int m = 0; m < toPoly->vertCount; ++m)
+					{
+						// skip the side if not a "hard edge" (dark line in editor)
+						if (toPoly->neis[m] != 0)
+							continue;
+
+						// check if the two sides can be jumped between
+						// TODO
+						char jumpType = getJumpType(fromTile, fromPoly, j, toTile, toPoly, m);
+
+
+						if (jumpType == 0xFF) continue;
+
+						// add links between two sides
+						unsigned int firstIdx = allocLink(fromTile);
+						unsigned int secondIdx = allocLink(toTile);
+						if (firstIdx != DT_NULL_LINK && secondIdx != DT_NULL_LINK)
+						{
+							// create first link
+							dtLink* firstLink = &fromTile->links[firstIdx];
+							firstLink->ref = getPolyRefBase(toTile) | (dtPolyRef)l;
+							firstLink->edge = (unsigned char)j;
+							firstLink->side = 0x0; // idk
+							firstLink->bmin = 0;
+							firstLink->bmax = 255;
+							// Add to linked list.
+							firstLink->next = fromPoly->firstLink;
+							fromPoly->firstLink = firstIdx;
+
+							firstLink->jumpType = jumpType;
+							firstLink->reverseLinkIndex = secondIdx;
+
+							// create second (reverse) link
+							dtLink* secondLink = &toTile->links[secondIdx];
+							secondLink->ref = getPolyRefBase(fromTile) | (dtPolyRef)i;
+							secondLink->edge = (unsigned char)m;
+							secondLink->side = 0x0; // idk
+							secondLink->bmin = 0;
+							secondLink->bmax = 255;
+							// Add to linked list.
+							secondLink->next = toPoly->firstLink;
+							toPoly->firstLink = secondIdx;
+
+							secondLink->jumpType = jumpType;
+							secondLink->reverseLinkIndex = firstIdx;
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -914,7 +1040,7 @@ int dtNavMesh::queryPolygonsInTile(const dtMeshTile* tile, const float* qmin, co
 ///
 /// @see dtCreateNavMeshData, #removeTile
 dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
-							dtTileRef lastRef, dtTileRef* result)
+							dtTileRef lastRef, dtTileRef* result, bool createLinks = true)
 {
 	// Make sure the data is in right format.
 	dtMeshHeader* header = (dtMeshHeader*)data;
@@ -996,7 +1122,7 @@ dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
 	unsigned char* d = data + headerSize;
 	tile->verts = dtGetThenAdvanceBufferPointer<float>(d, vertsSize);
 	tile->polys = dtGetThenAdvanceBufferPointer<dtPoly>(d, polysSize);
-	d += header->sth_per_poly*header->polyCount * 4;
+	tile->unkPolyThing = dtGetThenAdvanceBufferPointer<int>(d, header->sth_per_poly * header->polyCount * 4);
 	tile->links = dtGetThenAdvanceBufferPointer<dtLink>(d, linksSize);
 	tile->detailMeshes = dtGetThenAdvanceBufferPointer<dtPolyDetail>(d, detailMeshesSize);
 	tile->detailVerts = dtGetThenAdvanceBufferPointer<float>(d, detailVertsSize);
@@ -1008,53 +1134,61 @@ dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
 	if (!bvtreeSize)
 		tile->bvTree = 0;
 
-	// Build links freelist
-	tile->linksFreeList = 0;
-	tile->links[header->maxLinkCount-1].next = DT_NULL_LINK;
-	for (int i = 0; i < header->maxLinkCount-1; ++i)
-		tile->links[i].next = i+1;
-
 	// Init tile.
 	tile->header = header;
 	tile->data = data;
 	tile->dataSize = dataSize;
 	tile->flags = flags;
 
-	connectIntLinks(tile);
+	// Build links freelist
+	tile->linksFreeList = 0;
 
-	// Base off-mesh connections to their starting polygons and connect connections inside the tile.
-	baseOffMeshLinks(tile);
-	connectExtOffMeshLinks(tile, tile, -1);
+	//createLinks = true;
 
-	// Create connections with neighbour tiles.
-	static const int MAX_NEIS = 32;
-	dtMeshTile* neis[MAX_NEIS];
-	int nneis;
-	
-	// Connect with layers in current tile.
-	nneis = getTilesAt(header->x, header->y, neis, MAX_NEIS);
-	for (int j = 0; j < nneis; ++j)
+	if (createLinks)
 	{
-		if (neis[j] == tile)
-			continue;
-	
-		connectExtLinks(tile, neis[j], -1);
-		connectExtLinks(neis[j], tile, -1);
-		connectExtOffMeshLinks(tile, neis[j], -1);
-		connectExtOffMeshLinks(neis[j], tile, -1);
-	}
-	
-	// Connect with neighbour tiles.
-	for (int i = 0; i < 8; ++i)
-	{
-		nneis = getNeighbourTilesAt(header->x, header->y, i, neis, MAX_NEIS);
+		tile->links[header->maxLinkCount - 1].next = DT_NULL_LINK;
+		for (int i = 0; i < header->maxLinkCount - 1; ++i)
+			tile->links[i].next = i + 1;
+
+		connectIntLinks(tile);
+
+		// Base off-mesh connections to their starting polygons and connect connections inside the tile.
+		baseOffMeshLinks(tile);
+		connectExtOffMeshLinks(tile, tile, -1);
+
+		// Create connections with neighbour tiles.
+		static const int MAX_NEIS = 32;
+		dtMeshTile* neis[MAX_NEIS];
+		int nneis;
+
+		// Connect with layers in current tile.
+		nneis = getTilesAt(header->x, header->y, neis, MAX_NEIS);
 		for (int j = 0; j < nneis; ++j)
 		{
-			connectExtLinks(tile, neis[j], i);
-			connectExtLinks(neis[j], tile, dtOppositeTile(i));
-			connectExtOffMeshLinks(tile, neis[j], i);
-			connectExtOffMeshLinks(neis[j], tile, dtOppositeTile(i));
+			if (neis[j] == tile)
+				continue;
+
+			connectExtLinks(tile, neis[j], -1);
+			connectExtLinks(neis[j], tile, -1);
+			connectExtOffMeshLinks(tile, neis[j], -1);
+			connectExtOffMeshLinks(neis[j], tile, -1);
 		}
+
+		// Connect with neighbour tiles.
+		for (int i = 0; i < 8; ++i)
+		{
+			nneis = getNeighbourTilesAt(header->x, header->y, i, neis, MAX_NEIS);
+			for (int j = 0; j < nneis; ++j)
+			{
+				connectExtLinks(tile, neis[j], i);
+				connectExtLinks(neis[j], tile, dtOppositeTile(i));
+				connectExtOffMeshLinks(tile, neis[j], i);
+				connectExtOffMeshLinks(neis[j], tile, dtOppositeTile(i));
+			}
+		}
+
+		connectExtJumpLinks(tile);
 	}
 	
 	if (result)

@@ -37,6 +37,87 @@ static float distancePtLine2d(const float* pt, const float* p, const float* q)
 	return dx*dx + dy*dy;
 }
 
+static void drawTileJumpLinks(duDebugDraw* dd, const dtNavMesh& mesh, const dtNavMeshQuery* query,
+	const dtMeshTile* tile, unsigned char flags, int drawLinkType)
+{
+	for (int i = 0; i < tile->header->polyCount; ++i)
+	{
+		const dtPoly* startPoly = &tile->polys[i];
+
+		if (startPoly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION)	// Skip off-mesh links.
+			continue;
+		// iterate through links in the poly
+		for (int j = startPoly->firstLink; j != -1; j = tile->links[j].next)
+		{
+			const dtLink* link = &tile->links[j];
+			// skip "normal" links (non-jumping ones)
+			if (link->jumpType == 0xFF || tile->links[i].ref == 0)
+				continue;
+
+			// filter
+			if (drawLinkType != -1 && link->jumpType != drawLinkType)
+				continue;
+
+			const dtPoly* endPoly;
+			const dtMeshTile* endTile;
+			if(dtStatusFailed(mesh.getTileAndPolyByRef(link->ref, &endTile, &endPoly)))
+				continue;
+
+			if (endPoly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION)	// Skip off-mesh links.
+				continue;
+
+			if (link->reverseLinkIndex == 0xFFFF)
+			{
+				float startPos[3];
+				float endPos[3];
+
+				int col = duRGBA(255, 100, 255, 40);
+				
+				query->getEdgeMidPoint(mesh.getPolyRefBase(tile) | (dtPolyRef)i, link->ref, startPos);
+
+				dtVcopy(endPos, startPos);
+
+				endPos[2] += 10.0f;
+
+				dd->begin(DU_DRAW_LINES, 2.0f);
+				dd->vertex(startPos, col);
+				dd->vertex(endPos, col);
+				dd->vertex(startPos, col);
+				dd->vertex(endPoly->org, col);
+				dd->end();
+				continue;
+			}
+
+
+			dtLink* reverseLink = &endTile->links[link->reverseLinkIndex];
+
+			const dtPoly* endEndPoly;
+			const dtMeshTile* endEndTile;
+			if (dtStatusFailed(mesh.getTileAndPolyByRef(reverseLink->ref, &endEndTile, &endEndPoly)))
+				continue;
+
+			if (endEndPoly != startPoly)
+				continue;
+
+			float startPos[3];
+			float endPos[3];
+
+			query->getEdgeMidPoint(mesh.getPolyRefBase(tile) | (dtPolyRef)i, link->ref, startPos);
+			query->getEdgeMidPoint(link->ref, mesh.getPolyRefBase(tile) | (dtPolyRef)i, endPos);
+
+			int col = duRGBA(100, 255, 100, 40);
+
+
+			dd->begin(DU_DRAW_LINES, 2.0f);
+			dd->vertex(startPos, col);
+			dd->vertex(endPos, col);
+			dd->end();
+
+		}
+	}
+
+}
+
 static void drawPolyBoundaries(duDebugDraw* dd, const dtMeshTile* tile,
 							   const unsigned int col, const float linew,
 							   bool inner)
@@ -118,7 +199,7 @@ static void drawPolyBoundaries(duDebugDraw* dd, const dtMeshTile* tile,
 }
 
 static void drawMeshTile(duDebugDraw* dd, const dtNavMesh& mesh, const dtNavMeshQuery* query,
-						 const dtMeshTile* tile, unsigned char flags)
+						 const dtMeshTile* tile, unsigned char flags, int drawLinkType)
 {
 	dtPolyRef base = mesh.getPolyRefBase(tile);
 
@@ -220,6 +301,8 @@ static void drawMeshTile(duDebugDraw* dd, const dtNavMesh& mesh, const dtNavMesh
 						(con->flags & DT_OFFMESH_CON_BIDIR) ? 30.0f : 0.0f, 30.0f, col);
 		}
 		dd->end();
+
+		drawTileJumpLinks(dd, mesh, query, tile, flags, drawLinkType);
 	}
 	
 	const unsigned int vcol = duRGBA(0,0,0,196);
@@ -234,7 +317,7 @@ static void drawMeshTile(duDebugDraw* dd, const dtNavMesh& mesh, const dtNavMesh
 	dd->depthMask(true);
 }
 
-void duDebugDrawNavMesh(duDebugDraw* dd, const dtNavMesh& mesh, unsigned char flags)
+void duDebugDrawNavMesh(duDebugDraw* dd, const dtNavMesh& mesh, unsigned char flags, int drawLinkType)
 {
 	if (!dd) return;
 	
@@ -242,11 +325,11 @@ void duDebugDrawNavMesh(duDebugDraw* dd, const dtNavMesh& mesh, unsigned char fl
 	{
 		const dtMeshTile* tile = mesh.getTile(i);
 		if (!tile->header) continue;
-		drawMeshTile(dd, mesh, 0, tile, flags);
+		drawMeshTile(dd, mesh, 0, tile, flags, drawLinkType);
 	}
 }
 
-void duDebugDrawNavMeshWithClosedList(struct duDebugDraw* dd, const dtNavMesh& mesh, const dtNavMeshQuery& query, unsigned char flags)
+void duDebugDrawNavMeshWithClosedList(struct duDebugDraw* dd, const dtNavMesh& mesh, const dtNavMeshQuery& query, unsigned char flags, int drawLinkType)
 {
 	if (!dd) return;
 
@@ -256,7 +339,7 @@ void duDebugDrawNavMeshWithClosedList(struct duDebugDraw* dd, const dtNavMesh& m
 	{
 		const dtMeshTile* tile = mesh.getTile(i);
 		if (!tile->header) continue;
-		drawMeshTile(dd, mesh, q, tile, flags);
+		drawMeshTile(dd, mesh, q, tile, flags, drawLinkType);
 	}
 }
 
@@ -298,7 +381,6 @@ void duDebugDrawNavMeshNodes(struct duDebugDraw* dd, const dtNavMeshQuery& query
 	}
 }
 
-
 static void drawMeshTileBVTree(duDebugDraw* dd, const dtMeshTile* tile)
 {
 	// Draw BV nodes.
@@ -307,15 +389,16 @@ static void drawMeshTileBVTree(duDebugDraw* dd, const dtMeshTile* tile)
 	for (int i = 0; i < tile->header->bvNodeCount; ++i)
 	{
 		const dtBVNode* n = &tile->bvTree[i];
+		int col = duRGBA(255, 255, 255, 128);
 		if (n->i < 0) // Leaf indices are positive.
 			continue;
-		duAppendBoxWire(dd, tile->header->bmin[0] + n->bmin[0]*cs,
+		duAppendBoxWire(dd, tile->header->bmax[0] - n->bmin[0]*cs,
 						tile->header->bmin[1] + n->bmin[1]*cs,
 						tile->header->bmin[2] + n->bmin[2]*cs,
-						tile->header->bmin[0] + n->bmax[0]*cs,
+						tile->header->bmax[0] - n->bmax[0]*cs,
 						tile->header->bmin[1] + n->bmax[1]*cs,
 						tile->header->bmin[2] + n->bmax[2]*cs,
-						duRGBA(255,255,255,128));
+						col);
 	}
 	dd->end();
 }
